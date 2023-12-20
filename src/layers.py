@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Tuple, TypeAlias
 
 from src.constants import Constants
-from src.biomass import PartialTools, Tools
+from src.live import PartialTools, Tools
 
 Depths: TypeAlias = Tuple[float, float] # top, bottom
 Stocks: TypeAlias = Tuple[float, float, float, float] # biomass, refractory, labile, inorganic

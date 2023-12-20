@@ -1,12 +1,13 @@
 '''
 Below ground biomass functions.
 '''
-from collections import namedtuple
+from dataclasses import dataclass
 from typing import TypeAlias, Callable
 
 import numpy as np
 
 from src.constants import Constants
+from src.stock import Tag, Measurement, conversion_builder
 
 # Aliases
 Depths: TypeAlias = tuple[float, float]
@@ -16,10 +17,8 @@ Turnover: TypeAlias = tuple[float, float, float]
 F_Distribution: TypeAlias = Callable[[float], float]
 F_Integration: TypeAlias = Callable[[Depths], float]
 F_Turnover: TypeAlias = Callable[[Depths, float], Turnover]
-        
 
-
-def distribution_builder(constants: Constants) -> Callable[[float], Callable[[float], float]]:
+def distribution_builder(constants: Constants) -> Callable[[float], F_Distribution]:
     '''
     Returns partially parametersized biomass distribution function.
     '''
@@ -146,20 +145,44 @@ class PartialTools:
         self.partial_turnover = turnover_builder(constants)
         self.partial_integration = integration_builder(constants)
         self.partial_distribution = distribution_builder(constants)
+        self.converter = conversion_builder(constants)
 
 class Tools:
     '''
     Holds fully parameterized biomass functions (intended for use as immutable object).
     '''
-    def __init__(self, partial_tools: PartialTools, top: float):
-        self.__distribution = partial_tools.partial_distribution(top)
-        self.__integration = partial_tools.partial_integration(self.__distribution)
-        self.turnover = partial_tools.partial_turnover(self.__integration)
-        self.erosion = partial_tools.partial_erosion(self.__integration)
-        self.burial = partial_tools.partial_burial(self.__integration)
-    
-    def mass(self, depths: Depths) -> float:
-        '''
-        Returns the total biomass [in g] in a layer.
-        '''
-        return self.__integration(depths)
+    def __init__(self, partial_tools: PartialTools, integration: F_Integration):
+        self.converter = partial_tools.converter
+        self.burial = partial_tools.partial_burial(integration)
+        self.erosion = partial_tools.partial_erosion(integration)
+        self.turnover = partial_tools.partial_turnover(integration)
+
+@dataclass(frozen=True)
+class Biomass:
+    '''Below ground biomass.'''
+    val: float
+    fxs: Tools
+    tag: Tag = Tag.BIOMASS
+    measurement: Measurement = Measurement.WEIGHT
+
+    @property
+    def length(self) -> float:
+        '''Returns the length [in cm] of the biomass.'''
+        if self.measurement == Measurement.LENGTH:
+            return self.val
+        return self.fxs.converter(self.val, self.tag, Measurement.LENGTH)
+    @property
+    def weight(self) -> float:
+        '''Returns the weight [in g] of the biomass.'''
+        if self.measurement == Measurement.WEIGHT:
+            return self.val
+        return self.fxs.converter(self.val, self.tag, Measurement.WEIGHT)
+
+def factory(top: float, depths: Depths, tools: PartialTools) -> Biomass:
+    '''
+    Returns a biomass object.
+    '''
+    distribution = tools.partial_distribution(top)
+    integration = tools.partial_integration(distribution)
+    tools = Tools(tools, integration)
+    return Biomass(integration(depths), tools)

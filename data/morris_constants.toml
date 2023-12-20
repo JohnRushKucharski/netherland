@@ -1,29 +1,30 @@
 [core]
-b = 1.0             # net transport of litter on or off cell, related to B in Morris & Bowden [dmls].
-sa = 1.0            # suface area of gridcell, 1 cm2 in Morris & Bowden [in cm2]
-ids = [1] 
+ids = [1, '...', 10]            # creates 10 gridcells, with ids ~ [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+surface_areas = [1.0, '...']    # suface areas of gridcell, 1 cm2 in Morris & Bowden [in cm2]
 
 [layer]
-du = 0.0            # Du: elevation of top of initial layer, not specified in Morris & Bowden [in cm].
-db = -30.0          # Db: uelevation of bottom of initial layer, not specifically defined in Morris & Bowden but from Db(0) only the first 30 is assumed to be alive [in cm].
+du = [0.0, '...']               # Du: elevation of top of initial layer, not specified in Morris & Bowden [in cm].
+db = [-30.0, '...']             # Db: elevation of bottom of initial layer, not specifically defined in Morris & Bowden but from Db(0) only the first 30 is assumed to be alive [in cm].
 
 [stocks]
 # INORGANIC
-bi = 0.1            # bulk density of inorganic matter, not defined in Morris & Bowden [in g/cm3].
+bi = [0.1, '...']               # bulk density of inorganic matter, not defined in Morris & Bowden [in g/cm3].
 
 # ORGANIC
-bo = 0.07182        # bulk density of organic matter [in g/cm3].
-fo = 0.83           # portion organic sediment, infered from Morris & Bowden to be: Wa(0) / Wa(0) + k4 [dmls].
+bo = [0.07182, '...']           # bulk density of organic matter [in g/cm3].
+fo = [0.83, '...']              # portion organic sediment, infered from Morris & Bowden to be: Wa(0) / Wa(0) + k4 [dmls].
 
 # REFRACTORY | LABILE
-k = 0.7142          # specific decay constant for labile organic material [in 1/yr].
-fc = 0.2            # portion organic material that is refractory material [dmls].
+k = [0.7142, '...']             # specific decay constant for labile organic material [in 1/yr].
+fc = [0.2, '...']               # portion organic material that is refractory material [dmls].
 
 # BIOMASS
-ro =  0.0105        # R_0: live below ground biomass at sediment surface [in g/cm].
-rd = 30.0           # the maximum depth of roots implied by du - db [in cm].
-k1 = 0.1            # distribution parameter for below ground biomass [in 1/cm].
-k2 = 0.5            # natural turnover rate of live belowground biomass [in 1/yr].
-k3 = 0.0344         # portion ash (inorganic) content in plant matter [in g/g].
-sv_to_ro = 1.0      # conversion of stem volume (from NBSDynamics to live below ground biomass at sediment surface) [dmls].
-wa_to_rl = 1.0      # production of ABOVE ground biomass per unit of below ground biomass, infered from Morris & Bowden Eq.10 to be Wa / Rl = B /Rl [dmls].
+ro =  [0.0105, '...']           # R_0: live below ground biomass at sediment surface [in g/cm].
+rd = [30.0, '...']              # the maximum depth of roots implied by du - db [in cm].
+k1 = [0.1, '...']               # distribution parameter for below ground biomass [in 1/cm].
+k2 = [0.5, '...']               # natural turnover rate of live belowground biomass [in 1/yr].
+k3 = [0.0344, '...']            # portion ash (inorganic) content in plant matter [in g/g].
+
+sv_to_ro = [1.0, '...']         # conversion of stem volume (from NBSDynamics to live below ground biomass at sediment surface) [dmls].
+wa_to_rl = [0.1, '...']         # fraction of ABOVE ground biomass per unit of below ground biomass that falls a litter, infered from Morris & Bowden Eq.10 to be Wa / Rl = B /Rl [dmls].
+b = [1.0, '...']                # net transport of litter on or off cell, related to B in Morris & Bowden [dmls].
