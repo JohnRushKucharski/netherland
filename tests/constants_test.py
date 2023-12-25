@@ -66,3 +66,52 @@ class TestImportFile(unittest.TestCase):
         '''Tests the import file returns constants.'''
         data = import_file(MORRIS_CONSTANTS)
         self.assertIsInstance(data[0], Constants)
+
+class TestConstants(unittest.TestCase):
+    '''Tests the Constants class.'''
+    def test_default_attributes_initialized(self):
+        '''Tests that the default objects attributes are initialized with appropriate types.'''
+        is_ok:bool = True
+        test_obj = import_file()[0]
+        for k, val in test_obj.__dict__.items():
+            if k.startswith('__') or str(val).startswith('<function'):
+                continue
+            else:
+                if k == 'id':
+                    if not isinstance(val, int):
+                        is_ok = False
+                else:
+                    if not isinstance(val, float):
+                        is_ok = False
+        self.assertTrue(is_ok)
+
+    def test_organic_converter_g_to_cm(self):
+        '''Test g to cm3 converter is callable.'''
+        self.assertTrue(callable(import_file()[0].organic_converter_g_to_cm))
+
+    def test_inorganic_converter_g_to_cm_1g_is_10cm(self):
+        '''
+        Exposes Morris constant g to cm conversion:
+        
+        A 1 cm3 volume weights 0.1 g (per the Morris & Bowden constants).
+        Equivalently, there are 10 cm3 per 1 g of inorganic material.
+        1 cm3 is 1/1,000,000 (less than a teaspoon) of a cubic meter.
+        So, 1 g of inorganic material in a 1 cm2 surface would be 10 cm deep.
+        '''
+        self.assertEqual(import_file()[0].inorganic_converter_g_to_cm(1), 10)
+
+    def test_organic_converter_g_to_cm_0d1g_is_1d392cm(self):
+        '''
+        Exposes Morris constant g to cm conversion:
+        
+        A 1 cm3 volume weights 0.07182 g (per the Morris & Bowden constants).
+        Equivalently there are 13.92 cm3 per 1 g of organic material.
+        So, 0.1 g of inorganic material in a 1 cm2 grid would be 1.392 cm deep.
+        '''
+        self.assertAlmostEqual(import_file()[0].organic_converter_g_to_cm(0.1), 1.392, 3)
+
+    def test_describe_cm3_to_g_conversion(self):
+        '''
+        1 kg of organic material takes up approximatly 13.923 liters (>3.5 gallons) of space.
+        '''
+        self.assertAlmostEqual(import_file()[0].organic_g_to_cm3 * 1000, 13923, -1)

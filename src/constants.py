@@ -212,32 +212,26 @@ class Constants:
         '''
         return 1 - self.fc
     @property
-    def __organic_converter_g_to_cm3(self) -> Callable[[float], float]:
+    def organic_g_to_cm3(self) -> Callable[[float], float]:
         '''
-        Converts g to cm3.
-        
-        Returns:
-            Function that takes weight [in g] and computes: g * (cm3/g) returning a volume in cm3.
+        Returns 1/self.bo constant [in cm3/g] for g to cm3 conversion.
         '''
-        return lambda g: g / self.bo
+        return 1 / self.bo
     @property
-    def __inorganic_converter_g_to_cm3(self) -> Callable[[float], float]:
+    def inorganic_g_to_cm3(self) -> Callable[[float], float]:
         '''
-        Converts g to cm3.
-                
-        Returns:
-            Function that takes weight [in g] and computes: g * (cm3/g) returning a volume in cm3.
+        Returns 1/self.bi constant [in cm3/g] for g to cm3 conversion.
         '''
-        return lambda g: g / self.bi
+        return 1 / self.bi
     @property
     def organic_converter_g_to_cm(self) -> Callable[[float], float]:
         '''
         Converts g to cm.
         
         Returns: 
-            Function takes weight [in g], computes: g * (cm3/ g) * (1/cm2) returning a length in cm.
+            Function takes weight [in g], computes: g * (cm3/g) * (1/cm2) returning a length in cm.
         '''
-        return lambda g: self.__organic_converter_g_to_cm3(g) / self.sa
+        return lambda g: g * self.organic_g_to_cm3 / self.sa
     @property
     def inorganic_converter_g_to_cm(self) -> Callable[[float], float]:
         '''
@@ -246,7 +240,7 @@ class Constants:
         Returns: 
             Function takes weight [in g], computes: g * (cm3/ g) * (1/cm2) returning a length in cm.
         '''
-        return lambda g: self.__inorganic_converter_g_to_cm3(g) / self.sa
+        return lambda g: g * self.inorganic_g_to_cm3 / self.sa
     @property
     def organic_converter_cm_to_g(self) -> Callable[[float], float]:
         '''

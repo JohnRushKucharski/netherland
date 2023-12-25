@@ -1,8 +1,8 @@
 '''
 Labile, refractory and inorganic sediment functions.
 '''
-from typing import Callable, Self
 from dataclasses import dataclass
+from typing import Callable, Self
 
 from src.constants import Constants
 from src.stock import Tag, Measurement, conversion_builder
@@ -36,6 +36,22 @@ def ash_uptake_builder(constants: Constants) -> Callable[[float], float]:
         return constants.k3 * biomass_weight * constants.wa_to_rl
     return ash_uptake
 
+def deposition_builder(constants: Constants) -> Callable[[float], tuple[float, float, float]]:
+    '''
+    Divides deposited sediment into labile, refractory and inorganic components.
+    '''
+    def deposition(weigth: float) -> tuple[float, float, float]:
+        '''
+        Computes biomass [in g] deposited as sediment [in cm].
+
+        Returns:
+            Tuple[float, float, float]: labile, refractory, inorganic [in g].
+        '''
+        return (weigth * constants.fo * constants.fl,
+                weigth * constants.fo * constants.fc,
+                weigth * constants.fi)
+    return deposition
+
 class Tools:
     '''
     Holds fully parameterized sediment functions.
@@ -44,13 +60,14 @@ class Tools:
         self.converter = conversion_builder(constants)
         self.ash_uptake = ash_uptake_builder(constants)
         self.decomposition = decomposition_builder(constants)
+        self.deposition = deposition_builder(constants)
 
 @dataclass(frozen=True)
 class Sediment:
-    '''Labile sediment.'''
+    '''Sediment base class.'''
     val: float
-    fxs: Tools
     tag: Tag
+    converter: Callable[[float, Tag, Measurement], float]
     measurement: Measurement = Measurement.WEIGHT
 
     @property
@@ -58,38 +75,80 @@ class Sediment:
         '''Returns the length [in cm] of the labile sediment.'''
         if self.measurement == Measurement.LENGTH:
             return self.val
-        return self.fxs.converter(self.val, self.tag, Measurement.LENGTH)
+        return self.converter(self.val, self.tag, Measurement.LENGTH)
     @property
     def weight(self) -> float:
         '''Returns the weight [in g] of the labile sediment.'''
         if self.measurement == Measurement.WEIGHT:
             return self.val
-        return self.fxs.converter(self.val, self.tag, Measurement.WEIGHT)
+        return self.converter(self.val, self.tag, Measurement.WEIGHT)
+    def update(self, weight: float) -> Self:
+        '''
+        Add/substract sediment [in g] to stock, returning new sediment container.
+        '''
+        return Sediment(self.weight + weight, self.tag, Measurement.WEIGHT, self.converter)
 
-    @staticmethod
-    def factory(tag: Tag, val: float, measurement: Measurement, tools: Tools) -> Self:
-        '''Generates a single sediment stock.'''
-        match tag:
-            case Tag.LABILE:
-                tools.ash_uptake = None
-                return Sediment(val, tools, tag.Labile, measurement)
-            case Tag.REFRACTORY:
-                tools.ash_uptake = None
-                tools.decomposition = None
-                return Sediment(val, tools, tag.Refractory, measurement)
-            case Tag.INORGANIC:
-                tools.decomposition = None
-                return Sediment(val, tools, tag.Inorganic, measurement)
-            case _:
-                raise ValueError(f'Invalid sediment tag: {tag}.')
+@dataclass(frozen=True)
+class Sediments:
+    '''Container for labile, refractory and inorganic sediment.'''
+    fxs: Tools
+    labile: Sediment
+    refractory: Sediment
+    inorganic: Sediment
 
-def factory(sum_of_stocks: float, measurement: Measurement, constants: Constants) -> tuple[Sediment, Sediment, Sediment]: # pylint: disable=line-too-long
+    def portions(self) -> tuple[float, float, float]:
+        '''
+        Computes portion labile, refractory and inorganic sediment.
+        '''
+        total = self.labile.weight + self.refractory.weight + self.inorganic.weight
+        return (self.labile.weight / total,
+                self.refractory.weight / total,
+                self.inorganic.weight / total)
+
+    def transfers(self, yrs: float) -> Self:
+        '''
+        Transfers losses of sediment from system due to decomposition and ash uptake.
+        '''
+        return Sediments(self.fxs,
+                         self.labile.update(self.fxs.decomposition(self.labile.weight, yrs)),
+                         self.refractory, # non-reactive no change expect by removal by erosion.
+                         self.inorganic.update(self.fxs.ash_uptake(self.inorganic.weight)))
+
+    def erosion(self, weight: float) -> Self:
+        '''
+        Adds or removes sediment [in g] to stocks, returning new sediment container.
+        '''
+        if weight < 0: # erosion
+            labile, refractory, inorganic = tuple(portion * weight for portion in self.portions())
+            return Sediments(self.fxs,
+                             self.labile.update(labile),
+                             self.refractory.update(refractory),
+                             self.inorganic.update(inorganic))
+        return self # no deposition below top layer.
+
+    def update(self, weights: tuple[float, float, float]) -> Self:
+        '''
+        Adds/substract sediment [in g] to stocks, returning new sediment container.
+        
+        Args:
+            weights (tuple[float, float, float]): labile, refractory, inorganic [in g].
+            
+        Returns:
+            Sediments: updated sediment container.
+        '''
+        return Sediments(self.fxs,
+                         self.labile.update(weights[0]),
+                         self.refractory.update(weights[1]),
+                         self.inorganic.update(weights[2]))
+
+def factory(sum_of_stocks: float, measurement: Measurement, constants: Constants) -> Sediments: # pylint: disable=line-too-long
     '''
     Returns labile, refractory and inorganic sediment stocks.
     '''
     tools = Tools(constants)
     organic, inorganic = sum_of_stocks * constants.fo, sum_of_stocks * constants.fi
     labile, refractory = organic * constants.fl, organic * constants.fc
-    return (Sediment.factory(Tag.LABILE, labile, measurement, tools),
-            Sediment.factory(Tag.REFRACTORY, refractory, measurement, tools),
-            Sediment.factory(Tag.INORGANIC, inorganic, measurement, tools))
+    return Sediments(tools,
+                     Sediment(labile, Tag.LABILE, measurement, tools.converter),
+                     Sediment(refractory, Tag.REFRACTORY, measurement, tools.converter),
+                     Sediment(inorganic, Tag.INORGANIC, measurement, tools.converter))
