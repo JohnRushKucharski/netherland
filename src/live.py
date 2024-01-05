@@ -1,8 +1,9 @@
 '''
 Below ground biomass functions.
 '''
+import math
 from dataclasses import dataclass
-from typing import TypeAlias, Callable
+from typing import TypeAlias, Callable, Self
 
 import numpy as np
 
@@ -33,7 +34,8 @@ def distribution_builder(constants: Constants) -> Callable[[float], F_Distributi
         non_negative_attribute('top', top)
         def fx(depth: float) -> float:
             '''
-            Computes biomass [in g] at a given depth [in cm].
+            Returns:
+                float: biomass [in g] at a given depth [in cm].
             '''
             non_negative_attribute('depth', depth)
             if depth > root_depth:
@@ -51,9 +53,10 @@ def integration_builder(constants: Constants) -> Callable[[F_Distribution], F_In
         '''
         Returns a fully parameterized function for integrating the biomass distribution function.
         '''
-        def integrate(depths: Depths) -> float:
+        def integrate(depths: tuple[float, float]) -> float:
             '''
-            Returns the integral of the biomass [in g] distribution function across depths [in cm].
+            Returns: 
+                float: integral of the biomass distribution function [in g] across depths [in cm].
             '''
             ascending_non_negative_attribute('depths', depths)
             return (fx(depths[1]) - fx(depths[0])) / -k1
@@ -74,8 +77,8 @@ def turnover_builder(constants: Constants) -> Callable[[F_Integration], F_Turnov
         Returns:
             Tuple[float, float, float]: refractory, labile, inorganic [in g].
         '''
-        non_negative_attribute('weight', weight)
         non_negative_attribute('years', years)
+        non_negative_attribute('weight', weight)
         return (
             weight * k2 * fl * years,
             weight * k2 * fc * years,
@@ -83,7 +86,6 @@ def turnover_builder(constants: Constants) -> Callable[[F_Integration], F_Turnov
         )
     return turnover
 
-# TODO: is depth in erosion and burial the layer depths, if so should I check that the erosion or deposition is not less depth.
 def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover]:
     '''
     Returns partially parameterized function removing biomass [in g] due to erosion [in cm].
@@ -93,7 +95,7 @@ def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnove
     k3 = constants.k3
     def partial(fx: F_Integration) -> F_Turnover:
         '''Returns fully parameterized function removing biomass [in g] due to erosion [in cm].'''
-        def erosion(depths: Depths, erosion: float) -> Turnover:
+        def erosion(depths: tuple[float, float], erosion: float) -> Turnover:
             '''
             Computes biomass [in g] removed due to erosion [in cm].
             
@@ -104,9 +106,10 @@ def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnove
             Returns:
                 Tuple[float, float, float]: refractory, labile, inorganic [in g].
             '''
-            ascending_non_negative_attribute('depths', depths)
             non_negative_attribute('erosion', erosion)
-            mass = fx((depths[0], depths[0] + erosion))
+            ascending_non_negative_attribute('depths', depths)
+            length = min(depths[1] - depths[0], erosion)
+            mass = fx((depths[0], depths[0] + length))
             return (mass * (1 - k3) * fl, mass * (1 - k3) * fc, mass * k3)
         return erosion
     return partial
@@ -121,20 +124,24 @@ def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover
     root_depth = constants.rd
     def partial(fx: F_Integration) -> F_Turnover:
         '''Returns fully parameterized function removing biomass [in g] due to burial [in cm].'''
-        def burial(depths: Depths, deposition: float) -> Turnover:
+        def burial(depths: tuple[float, float], deposition: float) -> Turnover:
             '''
             Computes biomass [in g] removed due to burial [in cm].
+            
+            Args:
+                depths (Depths): top and bottom depths [in cm] of the layer.
+                deposition (float): deposition [in cm] over the timestep. Must be non-negative.
             
             Returns:
                 Tuple[float, float, float]: refractory, labile, inorganic [in g].
             '''
-            ascending_non_negative_attribute('depths', depths)
             non_negative_attribute('deposition', deposition)
+            ascending_non_negative_attribute('depths', depths)
             def is_in_live_zone(depth_delta: float = 0):
                 return depths[1] + depth_delta <= root_depth
             if is_in_live_zone() and not is_in_live_zone(deposition):
-                removal_depth = depths[1] + deposition - root_depth
-                mass = fx((depths[1] - removal_depth, depths[1]))
+                removal_depth = max(root_depth - deposition, depths[0])
+                mass = fx((removal_depth, root_depth))
                 organic, inorganic = mass * (1 - k3), mass * k3
                 return (organic * fl, organic * fc, inorganic)
             else:
@@ -142,6 +149,18 @@ def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover
                 return (0, 0, 0)
         return burial
     return partial
+
+@dataclass(frozen=True)
+class Tools:
+    '''
+    Holds fully parameterized biomass functions (intended for use as immutable object).
+    '''
+    turnover: F_Turnover
+    integration: F_Integration
+    burial: Callable[[Depths, float], Turnover]
+    erosion: Callable[[Depths, float], Turnover]
+    converter: Callable[[float, Tag, Measurement], float]
+    tools_builder: Callable[[float], Self]
 
 class PartialTools:
     '''
@@ -157,15 +176,27 @@ class PartialTools:
         self.turnover = turnover_builder(constants)
         self.converter = conversion_builder(constants)
 
-class Tools:
-    '''
-    Holds fully parameterized biomass functions (intended for use as immutable object).
-    '''
-    def __init__(self, partial_tools: PartialTools, integration: F_Integration):
-        self.converter = partial_tools.converter
-        self.turnover = partial_tools.turnover
-        self.burial = partial_tools.partial_burial(integration)
-        self.erosion = partial_tools.partial_erosion(integration)
+    def make_tools(self, top: float) -> Tools:
+        '''
+        Returns a fully parameterized biomass functions.
+        '''
+        f = self.partial_distribution(top)
+        integrate = self.partial_integration(f)
+        return Tools(self.turnover, integrate,
+                     self.partial_burial(integrate), self.partial_erosion(integrate),
+                     self.converter, self.remake_tools_builder)
+
+    @property
+    def remake_tools_builder(self) -> Callable[[float], 'Tools']:
+        '''
+        Returns a function that returns a fully parameterized biomass functions.
+        '''
+        def remake_tools(top: float) -> 'Tools':
+            '''
+            Returns a fully parameterized biomass functions.
+            '''
+            return self.make_tools(top)
+        return remake_tools
 
 @dataclass(frozen=True)
 class Biomass:
@@ -175,10 +206,6 @@ class Biomass:
     tag: Tag = Tag.BIOMASS
     measurement: Measurement = Measurement.WEIGHT
 
-    @property
-    def tag(self) -> Tag:
-        '''Returns the tag of the biomass.'''
-        return Tag.BIOMASS
     @property
     def length(self) -> float:
         '''Returns the length [in cm] of the biomass.'''
@@ -204,15 +231,23 @@ class Biomass:
         if deposition > 0:
             return (tuple(np.sum(self.fxs.turnover(self.weight, yrs), self.fxs.burial(depths, deposition))),  # pylint: disable=line-too-long
                     (0.0, 0.0 , 0.0)) # no losses from system.
-        else:
+        else: # erosion
             return (self.fxs.turnover(self.weight, yrs),
                     self.fxs.erosion(depths, -deposition)) # loss from system
 
-def factory(top: float, depths: Depths, tools: PartialTools) -> Biomass:
+    def remake(self, top: float) -> Self:
+        '''
+        Returns a new biomass object.
+        '''
+        return Biomass(self.val, self.fxs.tools_builder(top))
+
+    def __eq__(self, other: Self) -> bool:
+        '''Returns True if self and other are equal.'''
+        return math.isclose(self.weight, other.weight, abs_tol=0.0001) and self.tag == other.tag
+
+def factory(top: float, depths: tuple[float, float], partial_tools: PartialTools) -> Biomass:
     '''
     Returns a biomass object.
     '''
-    distribution = tools.partial_distribution(top)
-    integration = tools.partial_integration(distribution)
-    tools = Tools(tools, integration)
-    return Biomass(integration(depths), tools)
+    tools = partial_tools.make_tools(top)
+    return Biomass(tools.integration(depths), tools)

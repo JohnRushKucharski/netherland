@@ -16,6 +16,10 @@ Throughout a simulation, once per timstep the model takes exogenously input eros
 ## Assumptions
 
 ## Notes
+The compute sequence within a timestep proceeds as follows:
+    1. Cell.step_forward() inputs are validated: yrs > 0, biomass > 0.
+    2. 
+
 Morris and Bowden (1986) describes a stable, marsh with constant levels of exogenous deposition and no erosion. This leads to the following assumptions:
 1. Turnover of biomass due to erosion and burial can be apportioned as follows:
     

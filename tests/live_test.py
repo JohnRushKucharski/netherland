@@ -5,7 +5,8 @@ import unittest
 
 from src.constants import import_file
 from src.live import (distribution_builder, integration_builder,
-                      turnover_builder, erosion_builder, burial_builder)
+                      turnover_builder, erosion_builder, burial_builder,
+                      PartialTools, Tools, Biomass, factory)
 
 test_constants = import_file()[0]
 
@@ -262,6 +263,7 @@ class TestPartialErosion(unittest.TestCase):
 class TestErosion(unittest.TestCase):
     '''Tests the erosion function.'''
     # pylint: disable=line-too-long
+    # TODO: Test erodable_depth
     def test_erosion_returns_tuple(self):
         '''Tests the erosion function returns a tuple.'''
         integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
@@ -286,7 +288,7 @@ class TestErosion(unittest.TestCase):
         '''Tests the erosion function output sums to biomass weight in eroded depth.'''
         integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
         erosion = erosion_builder(test_constants)(integration)
-        self.assertAlmostEqual(sum(erosion((0, 1), erosion=10)), integration((0, 10)), 4)
+        self.assertAlmostEqual(sum(erosion((0, 11), erosion=10)), integration((0, 10)), 4)
 
 class TestBurialBuilder(unittest.TestCase):
     '''
@@ -339,4 +341,37 @@ class TestBurial(unittest.TestCase):
         burial = burial_builder(test_constants)(integration)
         actual = burial((test_constants.rd - 1, test_constants.rd), deposition=1.0)
         self.assertAlmostEqual(sum(actual), expected, 4)
-    # TODO: unit test same as above but with deposition > 1.0 fails.
+    def test_burial_output_sums_to_biomass_at_bottom_depth(self):
+        '''Tests the burial function output sums to biomass weight in deposited depth.'''
+        integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
+        expected = integration((test_constants.rd - 2, test_constants.rd))
+        burial = burial_builder(test_constants)(integration)
+        actual = burial((test_constants.rd - 2, test_constants.rd), deposition=2.0)
+        self.assertAlmostEqual(sum(actual), expected, 4)
+    def test_burial_output_sums_to_biomass_at_bottom_for_deposition_excceeds_depth_case(self):
+        '''Tests the burial function output sums to biomass weight in deposited depth.'''
+        integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
+        expected = integration((test_constants.rd - 1, test_constants.rd))
+        burial = burial_builder(test_constants)(integration)
+        actual = burial((test_constants.rd - 1, test_constants.rd), deposition=2.0)
+        self.assertAlmostEqual(sum(actual), expected, 4)
+    def test_burial_below_live_zone_at_start_returns_zeros(self):
+        '''Tests the burial function returns zeros below live zone at start.'''
+        integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
+        burial = burial_builder(test_constants)(integration)
+        actual = burial((test_constants.rd, test_constants.rd + 1), deposition=1.0)
+        self.assertEqual(actual, (0, 0, 0))
+    def test_burial_wholey_in_live_zone_returns_zeros(self):
+        '''Tests the burial function returns zeros wholly in live zone.'''
+        integration = integration_builder(test_constants)(distribution_builder(test_constants)(1.0))
+        burial = burial_builder(test_constants)(integration)
+        actual = burial((0, test_constants.rd-1), deposition=1.0)
+        self.assertEqual(actual, (0, 0, 0))
+
+class TestFactory(unittest.TestCase):
+    '''Tests the biomass object.'''
+    def test_factory_biomass_val_eq_integrated_biomass_weight(self):
+        '''Tests the biomass val is weight.'''
+        biomass = factory(1.0, (0, 1), PartialTools(test_constants))
+        self.assertEqual(biomass.val, PartialTools(test_constants).make_tools(1).integration((0,1)))
+
