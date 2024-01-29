@@ -37,6 +37,31 @@ These inputs are supplied to the Cell.step_forward() function. The compute proce
 
 6. The new layer depth is computed taking steps 1-5 into account. This makes it possible to compute the amount of live below ground biomass that is present in the layer (since this depends on distribution parameters defined the the input *.toml constants file.)
 
+## Use
+The notebooks directory of this repository provides simple "how to use" examples. The model is intended to be used as a library (distributed through pypi.org at https://pypi.org/project/netherland/) that is imported into other python models that generate the required inputs. It specifically targets the NBS Dynamic model: https://github.com/Deltares-research/NBSDynamics.
+
+```
+from netherland.constants import import_file
+from netherland.cell import factory
+...
+
+# setting up morphodynamic vegitation model
+def initialize_morphodynamic_veg_model(...):
+    ...
+    cells_constants = import_file(your_constants.toml)[] 
+    ncells = [factory(constants) for constants in cells_constants]
+    ...
+...
+
+# during morphodynamic vegitation simulation
+def morphodyanamic_veg_model_simulate_timestep(...):
+    ...
+    for i, cell in enumerate(cells):
+        ncells[i] = cell.step_forward(deposition, biomass_at_surface, years, substeps)
+    ...
+...
+```
+
 ## Assumptions
 The following are notable assumptions, many arising from Morris & Bowden (1986). They are listed here in not particular order and this list is not exhustive.
 
