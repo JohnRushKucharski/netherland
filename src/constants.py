@@ -77,6 +77,8 @@ class ImportFileConstants:
     def __post_init__(self):
         #pylint: disable=line-too-long
         for i, id_ in enumerate(self.ids):
+            if self.ids.count(id_) > 1:
+                raise ValueError(f'The id: {id_} is not unique.')
             if self.surface_areas[i] <= 0:
                 raise ValueError(f'At id: {id_}, sa: {self.surface_areas[i]} (surface area [in cm2]) must be greater than 0.')
             if self.du[i] <= self.db[i]:
@@ -268,6 +270,9 @@ def parse_ids(ids: list[any]) -> tuple[int, ...]:
         if len(ids) != 3:
             raise ValueError('Too many values after "...".')
         ids = tuple(range(ids[0], ids[2] + 1))
+    for id_ in ids:
+        if ids.count(id_) > 1:
+            raise ValueError(f'The id: {id_} is not unique.')
     return tuple(map(int, ids))
 
 def parse_var(var: list[any], n_ids: int) -> tuple[float, ...]:
@@ -320,9 +325,9 @@ def import_file(path: str = MORRIS_CONSTANTS) -> tuple[Constants, ...]:
         k, fc,
         ro, rd, k1, k2, k3,
         sv_to_ro, wa_to_rl, b)
-    return tuple(factory(file_constants, i) for i in range(n))
+    return tuple(_factory(file_constants, i) for i in range(n))
 
-def factory(file_constants: ImportFileConstants, i: int) -> Constants:
+def _factory(file_constants: ImportFileConstants, i: int) -> Constants:
     '''
     Returns a model grid cell's constants.
     '''

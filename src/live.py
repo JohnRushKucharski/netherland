@@ -114,6 +114,26 @@ def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnove
         return erosion
     return partial
 
+def negative_growth_builder(constants: Constants) -> Callable[[float], Turnover]:
+    '''
+    Returns partially parameterized function removing biomass [in g] due to negative growth [in g].
+    '''
+    k3 = constants.k3
+    def negative_growth(mass: float) -> Turnover:
+        '''
+        Computes biomass [in g] removed due to negative growth [in dmls/yr].
+            
+        Returns:
+            Tuple[float, float, float]: refractory, labile, inorganic [in g].
+        '''
+        organic, inorganic = mass * (1 - k3), mass * k3
+        return (
+            organic * constants.fl,
+            organic * constants.fc,
+            inorganic
+        )
+    return negative_growth
+
 def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover]:
     '''
     Returns partially parameterized function removing biomass [in g] due to burial [in cm].
@@ -159,6 +179,7 @@ class Tools:
     integration: F_Integration
     burial: Callable[[Depths, float], Turnover]
     erosion: Callable[[Depths, float], Turnover]
+    negative_growth: Callable[[float], Turnover]
     converter: Callable[[float, Tag, Measurement], float]
     tools_builder: Callable[[float], Self]
 
@@ -173,6 +194,7 @@ class PartialTools:
         self.partial_erosion = erosion_builder(constants)
         self.partial_integration = integration_builder(constants)
         self.partial_distribution = distribution_builder(constants)
+        self.negative_growth = negative_growth_builder(constants)
         self.turnover = turnover_builder(constants)
         self.converter = conversion_builder(constants)
 
@@ -184,6 +206,7 @@ class PartialTools:
         integrate = self.partial_integration(f)
         return Tools(self.turnover, integrate,
                      self.partial_burial(integrate), self.partial_erosion(integrate),
+                     self.negative_growth,
                      self.converter, self.remake_tools_builder)
 
     @property
@@ -219,9 +242,10 @@ class Biomass:
             return self.val
         return self.fxs.converter(self.val, self.tag, Measurement.WEIGHT)
 
-    def transfers(self, deposition: float, depths: Depths, yrs: float) -> tuple[Turnover, Turnover]:
+    def transfers(self, deposition: float, depths: Depths,
+                  yrs: float) -> tuple[Turnover, Turnover, Turnover]:
         '''
-        Computes turnover and burial or erosion [in g] of biomass over timeperiod [in yrs].
+        Computes turnover, burial, erosion [in g] of biomass over timeperiod [in yrs].
         
         By assumption, based on Morris & Bowden (1986) preceeding equation 10, "root uptake &
         root death are equivalent" thus turnover is instantaneous replaced in equal quantities
@@ -229,17 +253,24 @@ class Biomass:
         before accounting for burial or erosion. As a result turnover is a net gain for the cohert.
         '''
         if deposition > 0:
-            return (tuple(np.sum(self.fxs.turnover(self.weight, yrs), self.fxs.burial(depths, deposition))),  # pylint: disable=line-too-long
+            return (self.fxs.turnover(self.weight, yrs),
+                    self.fxs.burial(depths, deposition),
                     (0.0, 0.0 , 0.0)) # no losses from system.
         else: # erosion
             return (self.fxs.turnover(self.weight, yrs),
+                    (0.0, 0.0, 0.0), # no burial with erosion.
                     self.fxs.erosion(depths, -deposition)) # loss from system
 
-    def remake(self, top: float) -> Self:
+    def remake(self, top: float, depth: float) -> Self:
         '''
         Returns a new biomass object.
+        
+        Args:
+            top (float): biomass at 0 depth [in g/cm2].
+            depth (float): depth [in cm] of biomass in stock.
         '''
-        return Biomass(self.val, self.fxs.tools_builder(top))
+        tools = self.fxs.tools_builder(top)
+        return Biomass(tools.integration((0, depth)), tools)
 
     def __eq__(self, other: Self) -> bool:
         '''Returns True if self and other are equal.'''

@@ -38,6 +38,11 @@ class TestParseIds(unittest.TestCase):
         ids = [1, 'a', 3]
         with self.assertRaises(ValueError):
             parse_ids(ids)
+    def test_duplicate_ids_raise_value_error(self):
+        '''Tests the parse_ids function with duplicate ids.'''
+        ids = [1, 1, 3]
+        with self.assertRaises(ValueError):
+            parse_ids(ids)
 
 class TestParseSurfaceAreas(unittest.TestCase):
     '''Tests the parse_surface_areas function.'''
