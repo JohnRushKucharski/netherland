@@ -147,8 +147,9 @@ def enumerate_backwards(data: list[any]|tuple[any,...]) -> tuple[int, any]:
     '''
     Enumerates a list or tuple backwards, or in case of cell from surface layer to bottom layer.
     '''
+    n = len(data) - 1
     for i in range(len(data)-1, -1, -1):
-        yield (i, data[i])
+        yield (n - i, data[i])
 
 @dataclass
 class Cell:
@@ -262,6 +263,14 @@ class Cell:
             layers.append(self.top_layer(deposition, top))
         return layers
 
+    def write_data(self) -> tuple[list[tuple[float,...]], tuple[str,...]]:
+        '''
+        Writes layer data in format compatible with pandas DataFrame.
+        '''
+        data = []
+        for i, layer in enumerate_backwards(self.layers):
+            data.append(layer.write_data)
+        return (data, self.layers[0].headers)
     # def __substep(self, deposition: float, top: float, yrs: float,
     #               is_first_pass: bool) -> list[Layer]:
     #     '''

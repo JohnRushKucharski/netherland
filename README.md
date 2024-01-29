@@ -6,9 +6,9 @@ This model follows closely the SEMIDEC Model described in:
 
 The model's basic unit of analysis is a cell, or block of sediment. A simulation may evaluate many cells, but within the context of this model each cells is independent of the others. Each cell is composed of a series of layers. Each layer contains live below ground biomass and stocks of labile, refractory and inorganic sediments, associated with a single simulated timestep.
 
-![alt text](https://github.com/JohnRushKucharski/netherland/blob/main/img/cell.jpg?raw=true)
+![alt text](https://github.com/JohnRushKucharski/netherland/blob/main/img/cell_layer_stocks.jpg?raw=true)
 
-The cell is parameterized with a large number of constants. These parameters are imported from a *.toml file, using the constants.import_file(filepath: str) command. A default file that provides the values presented in Table 1. Definitions and best estimates of parameters of Morris & Bowden (1986) is distributed with the package and will load as the default input to the constants.import_file() command. 
+The cell is parameterized with a large number of constants. These parameters are imported from a *.toml file, using the constants.import_file(filepath: str) command. A default file that provides the values presented in Table 1 of Morris & Bowden (1986). Definitions and best estimates of parameters of Morris & Bowden (1986) is distributed with the package and will load as the default input to the constants.import_file() command. 
 
 Throughout a simulation, at the start of each simulated timestep coupled models provide sedimentation and biomass inputs for each grid cell. Specifically, erosion/deposition inputs are provided by a coupled sediment transport model, like those in the Delft3D software (https://oss.deltares.nl/web/delft3d); and above ground biomass inputs are provided by a vegitation model, like the NBSDynamics software (https://github.com/Deltares-research/NBSDynamics) [note: both are produced by Deltares (https://www.deltares.nl/en)]. The length of model timesteps, is also taken as an input - though the length of the model timesteps may vary thoughout the course of the simulation. 
 
