@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netherland"
+version = "0.0.0"
+description = "Model salt marsh sedimentation, underground biomass production and decomposition."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+authors = [
+  { name = "JohnRushKucharski", email = "johnkucharski@gmail.com" }
+]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy>=1.26,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/JohnRushKucharski/netherland"
+
+[dependency-groups]
+dev = [
+  "build>=1.2",
+  "pytest>=7.4,<9",
+  "twine>=5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*test*.py"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
