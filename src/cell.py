@@ -10,7 +10,7 @@ import src.live as bio
 import src.sediment as sed
 from src.data import logger
 from src.constants import Constants
-from src.stock import Measurement, Inactive
+from src.stock import Measurement, Inactive, Tag
 from src.validators import non_negative_attribute, positive_attribute
 
 # TODO: add logging to cell.step_forward (may need to be 3D data array: x: stock, y: layer, z: time is simulation).
@@ -98,13 +98,14 @@ class Layer:
         # 4. Sediments transfers: erosion (-) of sediments (after adjustment for biomass erosion).
         bio_inflow = tuple(map(operator.add, turnover, burial))
         bio_delta = self.stocks[0].fxs.converter(-sum(erosion), bio.Tag.BIOMASS, Measurement.LENGTH)
-        sediments = self.stocks[1].transfers(yrs).update(bio_inflow).erosion(-deposition-bio_delta)
+        sediments = self.stocks[1].transfers(self.stocks[0].weight, yrs).update(bio_inflow).erosion(-deposition + bio_delta)
         # 5. Sediments update: add deposition (+) if is_top_layer, otherwise ignore this step.
         if is_top_layer and deposition > 0: # if deposition <= 0 this is pointless.
             sediments = sediments.update(self.stocks[1].tools.deposition(deposition))
         # 6. Adjust depth of layer from turnover(+), erosion(-), transfers out of system (-).
         sed_delta = sediments.length - self.stocks[1].length # loss will be negative.
-        new_depths = (self.depths[0] + bio_delta + sed_delta, self.depths[1])
+        new_top = min(self.depths[0] - bio_delta - sed_delta, self.depths[1]) # clamp: top <= bottom.
+        new_depths = (new_top, self.depths[1])
         # 7. Remake biomass stock with new biomass at surface and new depths.
         biomass = self.stocks[0].remake(biomass_at_surface, (new_depths[1] - new_depths[0]))
         ngrowth = self.stocks[0].val - (math.fsum(erosion) + math.fsum(burial)) - biomass.val
@@ -180,12 +181,31 @@ class Cell:
             i += 1
         return depth
 
+    @property
+    def layer_elevations(self) -> list[float]:
+        '''
+        Returns elevations [cm] of the cell surface and each layer's bottom, ordered
+        top-to-bottom (shallowest first).
+
+        The first element is the surface elevation (cell.elevation).
+        Each subsequent element is the absolute elevation of the bottom of that layer:
+            elevation - layer.depths[1]
+
+        Example (2-layer cell, elevation=-11.88):
+            [-11.88, -12.88, -30.0]
+             ^surface  ^new top bottom  ^original bottom
+        '''
+        elevs: list[float] = [self.elevation]
+        for layer in reversed(self.layers):
+            elevs.append(self.elevation - layer.depths[1])
+        return elevs
+
     def step_forward(self, dep: float, top: float, yrs: float, sub_steps: int = 1) -> Self:
         '''
         Steps model cell forward by specified number of years.
         
         Args:
-            dep (float): deposition/erosion(+/-) [in g].
+            dep (float): deposition/erosion(+/-) [in cm].
             top (float): biomass at surface of cell [in g/cm^2].
             yrs (float): length of timestep [in yrs].
             sub_steps (int): number of substeps to take. 1 by default.
@@ -201,11 +221,13 @@ class Cell:
         non_negative_attribute('yrs', yrs)
         non_negative_attribute('top', top)
         positive_attribute('sub_steps', sub_steps)
-        layers = self.layers
+        layers = list(self.layers)  # copy to avoid mutating the original cell's layer list
         ddep, dtop, dt = dep/sub_steps, (top - self.top) / sub_steps, yrs/sub_steps # d_<var>/d_t
+        elevation_change = 0.0
         for i in range(sub_steps):
-            layers = self.__substep(ddep, self.top + dtop * (i + 1), dt, i, layers)
-        return Cell(top, self.elevation, layers, self.tools)
+            layers, shift = self.__substep(ddep, self.top + dtop * (i + 1), dt, i, layers)
+            elevation_change -= shift  # positive shift = surface sank = elevation decreases
+        return Cell(top, self.elevation + elevation_change, layers, self.tools)
         # Update top elevation.
         # --Interate downwards (calling Layer.step_forward).
         # Pass new bottom layer depth down to next layer (as top).
@@ -216,52 +238,57 @@ class Cell:
         # Stop when left over erosion AND biomass at surface is zero.
 
     def __substep(self, deposition: float, top: float, years: float,
-                i: int, layers: list[Layer]) -> list[Layer]:
+                i: int, layers: list[Layer]) -> tuple[list[Layer], float]:
         '''
         Steps model forward by less than a full timestep.
         
-        Computes in the following order:
-        1. Biomass distribution which applys to all layers in cell is computed.
-        2. Depth of current top layer is computed (this increments at the bottom of the loop).
-        3. Loop from surface to bottom layer of cell (i.e. last to first item, reverse order).
-        4. Compute biomass as surface of current layer.
-        5. Erosion versus deposition: is_top_layer if not first substep and first layer
-        (a) deposition - if is_top_layer then sedimentation and burial, othersise only burial.
-        (b) erosion - (negative deposition) less than or equal to layer depth.
-        6. Update layer (see Layer.step_forward for details).
-
-        Args:
-            deposition (float): _description_
-            top (float): _description_
-            years (float): _description_
-            i (int): _description_
-            n (int): _description_
-            layers (list[Layer]): _description_
-
         Returns:
-            list[Layer]: _description_
+            tuple[list[Layer], float]: updated layers and the surface shift in cm.
+                A positive shift means the surface sank (moved deeper), reducing elevation.
         '''
         # 1. Biomass Distribution applies to entire cell.
         f = self.tools[0].partial_distribution(top)
-        # 2. Depth of top of current layer, if this is the first pass
+        # 2. Total biomass at START of substep drives litter production this timestep.
+        total_biomass_for_litter = sum(layer.stocks[0].weight for layer in layers)
+        # 3. Depth of top of current layer, if this is the first pass
         # then i == 0 and we start on the "second" layer, then starting depth
         # (for the top of the first layer in the loop) is below the deposition.
         depth = 0 if deposition < 0 or i != 0 else deposition
-        # 3. Loop from top to bottom layer = last to first item in list.
+        # 4. Loop from top to bottom layer = last to first item in list.
         for j, layer in enumerate_backwards(layers): # top to bottom
-            # 4. biomass at surface of layer
+            # 5. biomass at surface of layer
             dtop = top if depth == 0 else f(depth)
-            # 5. Erosion versus deposition and burial tracks.
+            # 6. Erosion versus deposition and burial tracks.
             is_top_layer = i != 0 and j==0 # false if first pass or not top layer.
             ddep = max(deposition, -layer.depth) if deposition < 0 else deposition
-            # 6. Update layer.
-            layers[j] = layer.step_forward(ddep, dtop, years, is_top_layer)
+            # 7. Update layer.
+            layers[len(layers)-1-j] = layer.step_forward(ddep, dtop, years, is_top_layer)
             derosion = ddep if deposition < 0 else 0
             deposition -= derosion # left over erosion.
             depth += layer.depth
+        shift = 0.0
         if i == 0: # first pass
-            layers.append(self.top_layer(deposition, top))
-        return layers
+            # Compute litter from total cell biomass at start of substep.
+            # Litter = above-ground plant material (leaves, stems) falling onto the surface,
+            # computed endogenously from total cell biomass (M&B b and wa_to_rl factors).
+            litter = self.tools[1].litter(total_biomass_for_litter, years)
+            # Litter occupies physical space: expand new top layer depth beyond dep.
+            litter_length = self.tools[1].converter(
+                litter[0] + litter[1], Tag.LABILE, Measurement.LENGTH)
+            new_dep = deposition + litter_length
+
+            # Shift existing layers so the shallowest existing layer's top == new_dep
+            # (no gap between new layer bottom and old column top).
+            shift = layers[-1].top - new_dep
+            if shift != 0.0:
+                layers = [Layer((l.depths[0] - shift, l.depths[1] - shift), l.stocks)
+                          for l in layers]
+            # Create new top layer at (0, new_dep) with base sediment from dep,
+            # then add litter to sediment stocks.
+            new_top = self.top_layer(deposition, top)
+            new_top = Layer((0, new_dep), (new_top.stocks[0], new_top.stocks[1].update(litter)))
+            layers.append(new_top)
+        return layers, shift
 
     def write_data(self) -> tuple[list[tuple[float,...]], tuple[str,...]]:
         '''
@@ -337,11 +364,20 @@ class Cell:
 
     def top_layer(self, dep: float, top: float) -> Layer:
         '''
-        Creates a new layer, with biomass.
+        Creates a new layer on top of the sediment column.
+        
+        The new layer is always positioned at depths (0, dep) relative to the current surface.
+        
+        Model choice: roots occupy space within the deposited sediment.
+        Sediment thickness = dep - bio.length, so all stocks sum exactly to dep (layer depth).
+        
+        Args:
+            dep (float): deposition thickness [in cm].
+            top (float): biomass at surface [in g/cm2].
         '''
-        return Layer((0, dep),
-                     (bio.factory(top, (0, dep), self.tools[0]),
-                      sed.factory(dep, self.tools[1], Measurement.LENGTH)))
+        biomass = bio.factory(top, (0, dep), self.tools[0])
+        sediment = sed.factory(max(0.0, dep - biomass.length), self.tools[1], Measurement.LENGTH)
+        return Layer((0, dep), (biomass, sediment))
 
 def initial_layer(constants: Constants) -> Layer:
     '''

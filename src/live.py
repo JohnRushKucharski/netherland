@@ -75,7 +75,7 @@ def turnover_builder(constants: Constants) -> Callable[[F_Integration], F_Turnov
         Computes biomass [in g] removed due to turnover [in dmls/yr].
             
         Returns:
-            Tuple[float, float, float]: refractory, labile, inorganic [in g].
+            Tuple[float, float, float]: labile, refractory, inorganic [in g].
         '''
         non_negative_attribute('years', years)
         non_negative_attribute('weight', weight)
@@ -104,7 +104,7 @@ def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnove
                 erosion (float): erosion [in cm] over the timestep. Must be non-negative.
             
             Returns:
-                Tuple[float, float, float]: refractory, labile, inorganic [in g].
+                Tuple[float, float, float]: labile, refractory, inorganic [in g].
             '''
             non_negative_attribute('erosion', erosion)
             ascending_non_negative_attribute('depths', depths)
@@ -124,7 +124,7 @@ def negative_growth_builder(constants: Constants) -> Callable[[float], Turnover]
         Computes biomass [in g] removed due to negative growth [in dmls/yr].
             
         Returns:
-            Tuple[float, float, float]: refractory, labile, inorganic [in g].
+            Tuple[float, float, float]: labile, refractory, inorganic [in g].
         '''
         organic, inorganic = mass * (1 - k3), mass * k3
         return (
@@ -153,7 +153,7 @@ def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover
                 deposition (float): deposition [in cm] over the timestep. Must be non-negative.
             
             Returns:
-                Tuple[float, float, float]: refractory, labile, inorganic [in g].
+                Tuple[float, float, float]: labile, refractory, inorganic [in g].
             '''
             non_negative_attribute('deposition', deposition)
             ascending_non_negative_attribute('depths', depths)

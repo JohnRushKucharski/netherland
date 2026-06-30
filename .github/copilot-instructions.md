@@ -153,3 +153,10 @@ Use README assumptions as domain intent when choosing between competing code cha
 - After code changes, always run the canonical validation order from section 4.
 - When touching dependencies or packaging, update both `pyproject.toml` and `uv.lock`.
 - Use search only if this instruction file does not answer a question.
+
+## 10) Repository custom skills
+
+- Repository-local skills live under `.github/skills/`.
+- If a task matches a skill name/description in that directory, use that skill workflow before doing ad-hoc exploration.
+- Always read the matching `SKILL.md` file for operating details when invoking a repository-local skill.
+- Do not create extra index files for skills unless explicitly requested; this section is the canonical reminder for skill discovery.

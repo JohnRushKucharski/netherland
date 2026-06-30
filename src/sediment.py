@@ -27,20 +27,48 @@ def decomposition_builder(constants: Constants) -> Callable[[float, float], floa
 
 def ash_uptake_builder(constants: Constants) -> Callable[[float], float]:
     '''
-    Returns a function that send ash [in g] to above ground biomass production, out of the layer.
+    Returns a function that removes inorganic ash [in g] from the layer to support
+    above-ground biomass production (M&B Eq. 10: -k3*(Wa/Rl)*B).
     '''
     def ash_uptake(biomass_weight: float, yrs: float) -> float:
         '''
-        Ash uptake [in g], this a loss from the system.
+        Inorganic ash uptake [in g], a loss from the system.
 
-        Notes:
-            [1] This is part of eq. 10: -k3(Wb)B/Rl in Morris & Bowden.
-            [2] There are some inconsistencies with this equation in Morris & Bowden.
+        Ash is drawn from the sediment in proportion to the below-ground biomass
+        present in the layer (M&B Eq. 10: k3*(Wa/Rl)*B).
+
+        Args:
+            biomass_weight (float): below-ground biomass [in g] in this layer.
+            yrs (float): length of timestep [in yrs].
         '''
         non_negative_attribute('yrs', yrs)
         non_negative_attribute('biomass_weight', biomass_weight)
         return constants.k3 * biomass_weight * constants.wa_to_rl * yrs
     return ash_uptake
+
+def litter_builder(constants: Constants) -> callable:
+    '''
+    Returns a function that computes litter inputs [in g] from below-ground biomass.
+
+    Above-ground plant material (leaves, stems) falls onto the marsh surface as litter.
+    The quantity is proportional to below-ground biomass via the wa_to_rl ratio and
+    the litter transport factor b (b=1: balanced, b=0: all washes away, b>1: net import).
+    Litter is entirely organic — split into labile and refractory fractions, no inorganic.
+    '''
+    def litter(biomass_weight: float, yrs: float) -> tuple[float, float, float]:
+        '''
+        Computes litter inputs [in g] as (labile, refractory, inorganic).
+
+        Args:
+            biomass_weight (float): total below-ground biomass [in g] in the cell.
+            yrs (float): length of timestep [in yrs].
+        '''
+        non_negative_attribute('biomass_weight', biomass_weight)
+        non_negative_attribute('yrs', yrs)
+        total = biomass_weight * constants.wa_to_rl * constants.b * yrs
+        return (total * constants.fl, total * constants.fc, 0.0)
+    return litter
+
 
 def deposition_builder(constants: Constants) -> Callable[[float], tuple[float, float, float]]:
     '''
@@ -68,6 +96,7 @@ class Tools:
         self.ash_uptake = ash_uptake_builder(constants)
         self.decomposition = decomposition_builder(constants)
         self.deposition = deposition_builder(constants)
+        self.litter = litter_builder(constants)
 
 @dataclass(frozen=True)
 class Sediment:
@@ -121,27 +150,34 @@ class Sediments:
                 self.refractory.weight / total,
                 self.inorganic.weight / total)
 
-    def transfers(self, yrs: float) -> Self:
+    def transfers(self, biomass_weight: float, yrs: float) -> Self:
         '''
         Transfers losses of sediment from system due to decomposition and ash uptake.
+
+        Args:
+            biomass_weight (float): below-ground biomass weight [in g] in this layer.
+                Ash uptake scales with biomass (M&B Eq. 10: -k3*(Wa/Rl)*B),
+                not with the inorganic sediment stock.
+            yrs (float): length of timestep [in yrs].
         '''
         return Sediments(self.fxs,
-                         self.labile.update(self.fxs.decomposition(self.labile.weight, yrs)),
+                         self.labile.update(-self.fxs.decomposition(self.labile.weight, yrs)),
                          self.refractory, # non-reactive no change expect by removal by erosion.
-                         self.inorganic.update(self.fxs.ash_uptake(self.inorganic.weight, yrs)))
+                         self.inorganic.update(-self.fxs.ash_uptake(biomass_weight, yrs)))
 
     def erosion(self, weight: float) -> Self:
         '''
-        Adds or removes sediment [in g] to stocks, returning new sediment container.
-        Weight is negative for erosion. Positive weights (deposition) are ingnored.
+        Removes sediment [in g] from stocks proportionally across labile, refractory,
+        and inorganic fractions. Weight is positive for erosion; non-positive values
+        (deposition below the top layer) are ignored and the stocks are returned unchanged.
         '''
         if weight > 0: # erosion
             # pylint: disable=line-too-long
             labile, refractory, inorganic = tuple(portion * weight for portion in self.portions())
             return Sediments(self.fxs,
-                             self.labile.update(self.fxs.converter(labile, Tag.LABILE, Measurement.WEIGHT)),
-                             self.refractory.update(self.fxs.converter(refractory, Tag.REFRACTORY, Measurement.WEIGHT)),
-                             self.inorganic.update(self.fxs.converter(inorganic, Tag.INORGANIC, Measurement.WEIGHT)))
+                             self.labile.update(-self.fxs.converter(labile, Tag.LABILE, Measurement.WEIGHT)),
+                             self.refractory.update(-self.fxs.converter(refractory, Tag.REFRACTORY, Measurement.WEIGHT)),
+                             self.inorganic.update(-self.fxs.converter(inorganic, Tag.INORGANIC, Measurement.WEIGHT)))
         return self # no deposition below top layer.
 
     def update(self, weights: tuple[float, float, float]) -> Self:

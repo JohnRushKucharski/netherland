@@ -107,5 +107,163 @@ class TestCell(unittest.TestCase):
     def test_step_forward_0_deposition_adds_new_empty_layer(self):
         '''Tests the step_forward function adds a new empty layer if deposition is 0.'''
         cell = factory(import_file()[0])
-        cell.step_forward(0, 0, 0)
-        self.assertEqual(len(cell.layers), 2)
+        stepped = cell.step_forward(0, 0, 0)
+        self.assertEqual(len(stepped.layers), 2)
+
+    def test_step_forward_old_layer_top_sinks_after_decomposition(self):
+        '''
+        When labile sediment decomposes the layer loses mass and its top should sink deeper
+        (depths[0] increases) while the bottom stays fixed.
+        '''
+        c = import_file()[0]
+        sc = factory(c)
+        initial_top = sc.layers[0].top  # = 0 at start
+        stepped = sc.step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        old_layer = stepped.layers[0]   # layers[0] = original (deepest) layer
+        self.assertGreater(old_layer.top, initial_top,
+                           'Old layer top must sink (increase) when material is lost to decomposition.')
+
+    def test_step_forward_new_layer_bottom_equals_old_layer_top(self):
+        '''
+        The new top layer bottom must equal the old layer top — the sediment column has no gaps.
+        '''
+        c = import_file()[0]
+        dep = 1.0
+        stepped = factory(c).step_forward(dep=dep, top=c.ro, yrs=1.0, sub_steps=1)
+        new_top_layer = stepped.layers[-1]  # layers[-1] = newest (shallowest) layer
+        old_layer = stepped.layers[0]       # layers[0] = original (deepest) layer
+        self.assertAlmostEqual(new_top_layer.bottom, old_layer.top, places=10,
+                               msg='New top layer bottom must equal old layer top: no gap in column.')
+
+    def test_step_forward_new_layer_thickness_equals_deposition_plus_litter(self):
+        '''
+        The new top layer thickness = dep + litter_length.
+        Litter from below-ground biomass (biomass * wa_to_rl * b * yrs) adds organic
+        material that occupies physical space on top of the deposited sediment.
+        '''
+        c = import_file()[0]
+        dep = 1.0
+        cell = factory(c)
+        total_biomass = sum(layer.stocks[0].weight for layer in cell.layers)
+        litter_weight = total_biomass * c.wa_to_rl * c.b * 1.0
+        litter_length = c.organic_converter_g_to_cm(litter_weight)
+        stepped = cell.step_forward(dep=dep, top=c.ro, yrs=1.0, sub_steps=1)
+        new_top_layer = stepped.layers[-1]
+        self.assertAlmostEqual(new_top_layer.depth, dep + litter_length, places=5,
+                               msg='New top layer thickness = dep + litter physical depth.')
+
+    def test_step_forward_new_top_layer_top_is_zero(self):
+        '''
+        Depths are relative to the current surface.  The newest (shallowest) layer must
+        always start at depth 0 so that all depths read as distance below the current ground.
+        '''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        self.assertEqual(stepped.layers[-1].top, 0.0,
+                         'New top layer top must always be 0 (current surface).')
+
+    def test_step_forward_elevation_changes_after_step(self):
+        '''
+        Cell elevation must update each step to reflect net gain/loss of surface height.
+        With high decomposition (k=0.7142) the surface drops significantly so elevation
+        should decrease from the initial value.
+        '''
+        c = import_file()[0]
+        sc = factory(c)
+        stepped = sc.step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        self.assertNotEqual(stepped.elevation, sc.elevation,
+                            'Elevation must update after each step.')
+
+    def test_step_forward_new_top_layer_stocks_sum_to_depth(self):
+        '''
+        In the new top layer, roots occupy space within the deposited sediment
+        (documented choice: dep = sediment only; layer thickness = dep + bio.length).
+        Equivalently: sediment = dep - bio.length, so stocks sum to layer depth.
+        '''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        new_top = stepped.layers[-1]
+        stock_sum = (new_top.stocks[0].length + new_top.stocks[1].labile.length
+                     + new_top.stocks[1].refractory.length + new_top.stocks[1].inorganic.length)
+        self.assertAlmostEqual(stock_sum, new_top.depth, places=5,
+                               msg='All stock lengths must sum to layer depth in new top layer.')
+
+class TestCellLayerElevations(unittest.TestCase):
+    '''Tests the Cell.layer_elevations property.'''
+
+    def test_initial_cell_layer_elevations_length(self):
+        '''Initial cell has 1 layer, so layer_elevations has 2 elements: surface + 1 bottom.'''
+        c = import_file()[0]
+        sc = factory(c)
+        self.assertEqual(len(sc.layer_elevations), 2)
+
+    def test_initial_cell_surface_elevation_is_zero(self):
+        '''Initial cell elevation = 0, so layer_elevations[0] == 0.'''
+        c = import_file()[0]
+        sc = factory(c)
+        self.assertEqual(sc.layer_elevations[0], 0.0)
+
+    def test_initial_cell_bottom_elevation(self):
+        '''Initial 30 cm layer bottom is 30 cm below surface, so elevation = 0 - 30 = -30.'''
+        c = import_file()[0]
+        sc = factory(c)
+        self.assertAlmostEqual(sc.layer_elevations[1], -30.0, places=10)
+
+    def test_stepped_cell_layer_elevations_length(self):
+        '''After one step there are 2 layers, so layer_elevations has 3 elements.'''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        self.assertEqual(len(stepped.layer_elevations), 3)
+
+    def test_stepped_cell_surface_elevation_changed(self):
+        '''After one step, surface elevation must differ from 0 (net loss > net gain).'''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        self.assertNotEqual(stepped.layer_elevations[0], 0.0)
+
+    def test_stepped_cell_bottom_elevation_is_minus_30(self):
+        '''Original bottom is fixed; deepest layer_elevations value must be -30 cm.'''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        self.assertAlmostEqual(stepped.layer_elevations[-1], -30.0, places=5)
+
+    def test_layer_elevations_are_monotonically_decreasing(self):
+        '''Elevations must decrease from surface to bottom (each layer is deeper).'''
+        c = import_file()[0]
+        stepped = factory(c).step_forward(dep=1.0, top=c.ro, yrs=1.0, sub_steps=1)
+        elevs = stepped.layer_elevations
+        for i in range(len(elevs) - 1):
+            self.assertGreater(elevs[i], elevs[i + 1],
+                               f'elevation[{i}]={elevs[i]} should be > elevation[{i+1}]={elevs[i+1]}')
+
+
+class TestLitterInTopLayer(unittest.TestCase):
+    '''Tests that litter from below-ground biomass is added to the top layer each timestep.'''
+
+    def test_top_layer_labile_includes_litter(self):
+        '''
+        Top layer labile must include litter from below-ground biomass turnover
+        (biomass_weight * wa_to_rl * b * fl * yrs) in addition to deposited sediment.
+        '''
+        c = import_file()[0]  # b=1.0, wa_to_rl=0.1 in morris constants
+        cell = factory(c)
+        total_biomass = sum(layer.stocks[0].weight for layer in cell.layers)
+        dep = 1.0
+        yrs = 1.0
+
+        stepped = cell.step_forward(dep=dep, top=c.ro, yrs=yrs)
+        new_top = stepped.layers[-1]
+
+        # litter contribution (labile fraction)
+        expected_litter_labile = total_biomass * c.wa_to_rl * c.b * c.fl * yrs
+
+        # base sediment labile in the new top layer (deposited sediment minus biomass, labile fraction)
+        base_sed_length = max(0.0, dep - new_top.stocks[0].length)
+        base_sed_labile_weight = c.organic_converter_cm_to_g(base_sed_length * c.fo * c.fl)
+
+        self.assertAlmostEqual(
+            new_top.stocks[1].labile.weight,
+            base_sed_labile_weight + expected_litter_labile,
+            places=5,
+            msg='Top layer labile must include both deposited sediment and litter from biomass turnover.')
+
