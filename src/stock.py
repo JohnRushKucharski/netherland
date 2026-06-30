@@ -3,7 +3,7 @@ Protocols for stock variables.
 '''
 from enum import Enum
 from dataclasses import dataclass
-from typing import Protocol, Callable, Self
+from typing import Protocol, Callable
 
 from src.constants import Constants
 
@@ -56,7 +56,7 @@ class Inactive:
         if self.measurement == Measurement.WEIGHT:
             return self.val
         return self.converter(self.val, self.tag, Measurement.WEIGHT)
-    def update(self, weight: float) -> Self:
+    def update(self, weight: float) -> 'Inactive':
         '''
         Add/substract sediment [in g] to stock, returning new sediment container.
         

@@ -6,7 +6,7 @@ This module reads a constants.toml files and generates an immutable Constants da
 
 import tomllib
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from dataclasses import dataclass
 
 MORRIS_CONSTANTS: str = str(Path(__file__).parent.parent.
@@ -214,13 +214,13 @@ class Constants:
         '''
         return 1 - self.fc
     @property
-    def organic_g_to_cm3(self) -> Callable[[float], float]:
+    def organic_g_to_cm3(self) -> float:
         '''
         Returns 1/self.bo constant [in cm3/g] for g to cm3 conversion.
         '''
         return 1 / self.bo
     @property
-    def inorganic_g_to_cm3(self) -> Callable[[float], float]:
+    def inorganic_g_to_cm3(self) -> float:
         '''
         Returns 1/self.bi constant [in cm3/g] for g to cm3 conversion.
         '''
@@ -262,20 +262,20 @@ class Constants:
         '''
         return lambda cm: cm * self.sa * self.bi
 
-def parse_ids(ids: list[any]) -> tuple[int, ...]:
+def parse_ids(ids: list[Any]) -> tuple[int, ...]:
     '''
     Parses a list of ids.
     '''
     if ids[1] == '...':
         if len(ids) != 3:
             raise ValueError('Too many values after "...".')
-        ids = tuple(range(ids[0], ids[2] + 1))
+        ids = list(range(ids[0], ids[2] + 1))
     for id_ in ids:
         if ids.count(id_) > 1:
             raise ValueError(f'The id: {id_} is not unique.')
     return tuple(map(int, ids))
 
-def parse_var(var: list[any], n_ids: int) -> tuple[float, ...]:
+def parse_var(var: list[Any], n_ids: int) -> tuple[float, ...]:
     '''
     Parses a list of surface areas.
     '''

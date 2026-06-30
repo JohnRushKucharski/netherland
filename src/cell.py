@@ -4,11 +4,10 @@ Initialization for a single model grid cell.
 import math
 import operator
 from dataclasses import dataclass
-from typing import TypeAlias, Self
+from typing import Any, Generator, TypeAlias
 
 import src.live as bio
 import src.sediment as sed
-from src.data import logger
 from src.constants import Constants
 from src.stock import Measurement, Inactive, Tag
 from src.validators import non_negative_attribute, positive_attribute
@@ -65,7 +64,7 @@ class Layer:
     #     return Layer(new_depths, (biomass, sediments))
 
     def step_forward(self, deposition: float, biomass_at_surface: float, yrs: float,
-                    is_top_layer: bool = False) -> tuple[tuple[float, float], sed.Sediments]:
+                    is_top_layer: bool = False) -> 'Layer':
         '''
         Manages transfers in and out of stock variables.
         NOTE: Biomass stock is NOT updated.
@@ -101,7 +100,7 @@ class Layer:
         sediments = self.stocks[1].transfers(self.stocks[0].weight, yrs).update(bio_inflow).erosion(-deposition + bio_delta)
         # 5. Sediments update: add deposition (+) if is_top_layer, otherwise ignore this step.
         if is_top_layer and deposition > 0: # if deposition <= 0 this is pointless.
-            sediments = sediments.update(self.stocks[1].tools.deposition(deposition))
+            sediments = sediments.update(self.stocks[1].fxs.deposition(deposition))
         # 6. Adjust depth of layer from turnover(+), erosion(-), transfers out of system (-).
         sed_delta = sediments.length - self.stocks[1].length # loss will be negative.
         new_top = min(self.depths[0] - bio_delta - sed_delta, self.depths[1]) # clamp: top <= bottom.
@@ -114,11 +113,13 @@ class Layer:
             sediments = sediments.update(removal)
         return Layer(new_depths, (biomass, sediments))
 
-    def __eq__(self, other: Self) -> bool:
+    def __eq__(self, other: object) -> bool:
         '''Layer equality.'''
-        isequal = True if self.depths == other.depths else False
+        if not isinstance(other, Layer):
+            return NotImplemented
+        isequal = self.depths == other.depths
         for i, stock in enumerate(self.stocks):
-            isequal = isequal if stock.__eq__(other.stocks[i]) else False
+            isequal = isequal and stock.__eq__(other.stocks[i])
         return isequal
 
     @property
@@ -144,7 +145,7 @@ class Layer:
                 self.stocks[0].length, self.stocks[1].labile.length,
                 self.stocks[1].refractory.length, self.stocks[1].inorganic.length)
 
-def enumerate_backwards(data: list[any]|tuple[any,...]) -> tuple[int, any]:
+def enumerate_backwards(data: list[Any]|tuple[Any,...]) -> Generator[tuple[int, Any], None, None]:
     '''
     Enumerates a list or tuple backwards, or in case of cell from surface layer to bottom layer.
     '''
@@ -200,7 +201,7 @@ class Cell:
             elevs.append(self.elevation - layer.depths[1])
         return elevs
 
-    def step_forward(self, dep: float, top: float, yrs: float, sub_steps: int = 1) -> Self:
+    def step_forward(self, dep: float, top: float, yrs: float, sub_steps: int = 1) -> 'Cell':
         '''
         Steps model cell forward by specified number of years.
         
@@ -295,7 +296,7 @@ class Cell:
         Writes layer data in format compatible with pandas DataFrame.
         '''
         data = []
-        for i, layer in enumerate_backwards(self.layers):
+        for _, layer in enumerate_backwards(self.layers):
             data.append(layer.write_data)
         return (data, self.layers[0].headers)
     # def __substep(self, deposition: float, top: float, yrs: float,

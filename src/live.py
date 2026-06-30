@@ -18,7 +18,7 @@ Turnover: TypeAlias = tuple[float, float, float]
 # pylint: disable=invalid-name #underscore typealias
 F_Distribution: TypeAlias = Callable[[float], float]
 F_Integration: TypeAlias = Callable[[Depths], float]
-F_Turnover: TypeAlias = Callable[[float], Turnover]
+F_Turnover: TypeAlias = Callable[[float, float], Turnover]
 
 def distribution_builder(constants: Constants) -> Callable[[float], F_Distribution]:
     '''
@@ -63,7 +63,7 @@ def integration_builder(constants: Constants) -> Callable[[F_Distribution], F_In
         return integrate
     return partial
 
-def turnover_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover]:
+def turnover_builder(constants: Constants) -> Callable[[float, float], Turnover]:
     '''
     Returns partially parameterized biomass turnover function.
     '''
@@ -86,7 +86,7 @@ def turnover_builder(constants: Constants) -> Callable[[F_Integration], F_Turnov
         )
     return turnover
 
-def erosion_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover]:
+def erosion_builder(constants: Constants) -> Callable[[F_Integration], Callable[[Depths, float], Turnover]]:
     '''
     Returns partially parameterized function removing biomass [in g] due to erosion [in cm].
     '''
@@ -134,7 +134,7 @@ def negative_growth_builder(constants: Constants) -> Callable[[float], Turnover]
         )
     return negative_growth
 
-def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover]:
+def burial_builder(constants: Constants) -> Callable[[F_Integration], Callable[[Depths, float], Turnover]]:
     '''
     Returns partially parameterized function removing biomass [in g] due to burial [in cm].
     '''
@@ -164,9 +164,8 @@ def burial_builder(constants: Constants) -> Callable[[F_Integration], F_Turnover
                 mass = fx((removal_depth, root_depth))
                 organic, inorganic = mass * (1 - k3), mass * k3
                 return (organic * fl, organic * fc, inorganic)
-            else:
-                # layer complete in our out of live zone (before and after).
-                return (0, 0, 0)
+            # layer completely in or out of live zone (before and after).
+            return (0, 0, 0)
         return burial
     return partial
 
@@ -256,12 +255,12 @@ class Biomass:
             return (self.fxs.turnover(self.weight, yrs),
                     self.fxs.burial(depths, deposition),
                     (0.0, 0.0 , 0.0)) # no losses from system.
-        else: # erosion
-            return (self.fxs.turnover(self.weight, yrs),
-                    (0.0, 0.0, 0.0), # no burial with erosion.
-                    self.fxs.erosion(depths, -deposition)) # loss from system
+        # erosion
+        return (self.fxs.turnover(self.weight, yrs),
+                (0.0, 0.0, 0.0), # no burial with erosion.
+                self.fxs.erosion(depths, -deposition)) # loss from system
 
-    def remake(self, top: float, depth: float) -> Self:
+    def remake(self, top: float, depth: float) -> 'Biomass':
         '''
         Returns a new biomass object.
         
@@ -272,8 +271,10 @@ class Biomass:
         tools = self.fxs.tools_builder(top)
         return Biomass(tools.integration((0, depth)), tools)
 
-    def __eq__(self, other: Self) -> bool:
+    def __eq__(self, other: object) -> bool:
         '''Returns True if self and other are equal.'''
+        if not isinstance(other, Biomass):
+            return NotImplemented
         return math.isclose(self.weight, other.weight, abs_tol=0.0001) and self.tag == other.tag
 
 def factory(top: float, depths: tuple[float, float], partial_tools: PartialTools) -> Biomass:

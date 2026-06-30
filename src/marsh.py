@@ -15,7 +15,7 @@ class Marsh:
     cells: dict[int, Cell]
 
     def step_forward(self, cell_inputs: Dict[int, tuple[float, float]],
-                     yrs: float, substeps: float = 1.0) -> None:
+                     yrs: float, substeps: int = 1) -> None:
         '''
         Steps all cells in the marsh forward in time.
         
@@ -24,7 +24,7 @@ class Marsh:
                 deposition [in cm] and
                 biomass at surface [in g/cm2] inputs keyed by cell id.
             yrs (float): length of timestep [in yrs].
-            substeps (float): number of substeps to take. 1 by default.
+            substeps (int): number of substeps to take. 1 by default.
         '''
         for cell_id, (dep, top) in cell_inputs.items():
             self.cells[cell_id].step_forward(dep, top, yrs, substeps)

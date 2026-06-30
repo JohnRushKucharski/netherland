@@ -2,7 +2,7 @@
 Labile, refractory and inorganic sediment functions.
 '''
 from dataclasses import dataclass
-from typing import Callable, Self
+from typing import Callable
 
 from src.constants import Constants
 from src.stock import Tag, Measurement, conversion_builder
@@ -46,7 +46,7 @@ def ash_uptake_builder(constants: Constants) -> Callable[[float], float]:
         return constants.k3 * biomass_weight * constants.wa_to_rl * yrs
     return ash_uptake
 
-def litter_builder(constants: Constants) -> callable:
+def litter_builder(constants: Constants) -> Callable[[float, float], tuple[float, float, float]]:
     '''
     Returns a function that computes litter inputs [in g] from below-ground biomass.
 
@@ -118,7 +118,7 @@ class Sediment:
         if self.measurement == Measurement.WEIGHT:
             return self.val
         return self.converter(self.val, self.tag, Measurement.WEIGHT)
-    def update(self, weight: float) -> Self:
+    def update(self, weight: float) -> 'Sediment':
         '''
         Add/substract sediment [in g] to stock, returning new sediment container.
         '''
@@ -150,7 +150,7 @@ class Sediments:
                 self.refractory.weight / total,
                 self.inorganic.weight / total)
 
-    def transfers(self, biomass_weight: float, yrs: float) -> Self:
+    def transfers(self, biomass_weight: float, yrs: float) -> 'Sediments':
         '''
         Transfers losses of sediment from system due to decomposition and ash uptake.
 
@@ -165,7 +165,7 @@ class Sediments:
                          self.refractory, # non-reactive no change expect by removal by erosion.
                          self.inorganic.update(-self.fxs.ash_uptake(biomass_weight, yrs)))
 
-    def erosion(self, weight: float) -> Self:
+    def erosion(self, weight: float) -> 'Sediments':
         '''
         Removes sediment [in g] from stocks proportionally across labile, refractory,
         and inorganic fractions. Weight is positive for erosion; non-positive values
@@ -180,7 +180,7 @@ class Sediments:
                              self.inorganic.update(-self.fxs.converter(inorganic, Tag.INORGANIC, Measurement.WEIGHT)))
         return self # no deposition below top layer.
 
-    def update(self, weights: tuple[float, float, float]) -> Self:
+    def update(self, weights: tuple[float, float, float]) -> 'Sediments':
         '''
         Adds/substract sediment [in g] to stocks, returning new sediment container.
         
@@ -195,8 +195,10 @@ class Sediments:
                          self.refractory.update(weights[1]),
                          self.inorganic.update(weights[2]))
 
-    def __eq__(self, other: Self) -> bool:
+    def __eq__(self, other: object) -> bool:
         '''Sediments equality.'''
+        if not isinstance(other, Sediments):
+            return NotImplemented
         return (self.labile.weight == other.labile.weight and
                 self.refractory.weight == other.refractory.weight and
                 self.inorganic.weight == other.inorganic.weight)
